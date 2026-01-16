@@ -40,6 +40,7 @@ export default function Checkout() {
   const [deliveryOption, setDeliveryOption] = useState("standard");
   const [paymentMethod, setPaymentMethod] = useState("cod");
   const [showAddressForm, setShowAddressForm] = useState(false);
+  const [placedOrderData, setPlacedOrderData] = useState(null);
   const [orderPlaced, setOrderPlaced] = useState(false);
   const [showScratch, setShowScratch] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
@@ -140,20 +141,32 @@ export default function Checkout() {
           addresses.push(primaryAddress);
         }
         // Add additional addresses
-        if (userData?.additionalAddresses && Array.isArray(userData.additionalAddresses)) {
-          userData.additionalAddresses.forEach((addr) => {
-            addresses.push({
-              id: addr.id || String(Math.random()),
-              name: addr.name || userData.name || "",
-              phone: addr.phone || userData.phone || "",
-              street: addr.street || "",
-              city: addr.city || "",
-              state: addr.state || "",
-              pincode: addr.pincode || "",
-              isDefault: addr.isDefault || false,
-              type: addr.type || "other",
+        if (userData?.additionalAddresses) {
+          let additional = userData.additionalAddresses;
+          try {
+            if (typeof additional === 'string') {
+              additional = JSON.parse(additional);
+            }
+          } catch (e) {
+            console.warn("Failed to parse additionalAddresses:", e);
+            additional = [];
+          }
+
+          if (Array.isArray(additional)) {
+            additional.forEach((addr) => {
+              addresses.push({
+                id: addr.id || String(Math.random()),
+                name: addr.name || userData.name || "",
+                phone: addr.phone || userData.phone || "",
+                street: addr.street || "",
+                city: addr.city || "",
+                state: addr.state || "",
+                pincode: addr.pincode || "",
+                isDefault: addr.isDefault || false,
+                type: addr.type || "other",
+              });
             });
-          });
+          }
         }
         // DEBUG LOG: Check what addresses are loaded
         console.log("🚀 DEBUG - Loaded addresses:", {
@@ -162,13 +175,17 @@ export default function Checkout() {
           selectedAddress: addresses.find(addr => addr.isDefault)?.id || addresses[0]?.id
         });
         setSavedAddressesList(addresses);
-        // Select default address
+        // Select default address or the most recently added one (last in list)
+        // If we just added an address, we want to select it
         const defaultAddress = addresses.find((addr) => addr.isDefault);
-        if (defaultAddress) {
+
+        if (selectedAddress && addresses.find(a => a.id === selectedAddress)) {
+          // Keep current selection if valid
+        } else if (defaultAddress) {
           setSelectedAddress(defaultAddress.id);
-        }
-        else if (addresses.length > 0) {
-          setSelectedAddress(addresses[0].id);
+        } else if (addresses.length > 0) {
+          // Default to the last added address (newest) if no default exists
+          setSelectedAddress(addresses[addresses.length - 1].id);
         }
       }
     }
@@ -307,7 +324,8 @@ export default function Checkout() {
         throw err;
       }
       if (response.data.success) {
-        // On success
+        // On success, save order details for display
+        setPlacedOrderData(response.data.data || response.data.order);
         setOrderPlaced(true);
         setTimeout(() => setShowConfetti(true), 300);
         setTimeout(() => {
@@ -706,12 +724,31 @@ export default function Checkout() {
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Subtotal</span>
-                <span className="text-foreground">{formatPrice(subtotal)}</span>
+                <span className="text-foreground">
+                  {formatPrice(orderPlaced && placedOrderData ? placedOrderData.totalPrice : subtotal)}
+                </span>
               </div>
+
+              {/* Tax Display */}
+              {orderPlaced && placedOrderData && parseFloat(placedOrderData.taxAmount) > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Tax</span>
+                  <span className="text-foreground">{formatPrice(placedOrderData.taxAmount)}</span>
+                </div>
+              )}
+
+              {/* Discount Display */}
+              {orderPlaced && placedOrderData && parseFloat(placedOrderData.discountAmount) > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Discount</span>
+                  <span className="text-green-600">-{formatPrice(placedOrderData.discountAmount)}</span>
+                </div>
+              )}
+
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Delivery</span>
-                <span className={deliveryFee === 0 ? "text-krishna-green" : "text-foreground"}>
-                  {deliveryFee === 0 ? "FREE" : formatPrice(deliveryFee)}
+                <span className={(orderPlaced && placedOrderData ? parseFloat(placedOrderData.shippingCost) : deliveryFee) === 0 ? "text-krishna-green" : "text-foreground"}>
+                  {(orderPlaced && placedOrderData ? parseFloat(placedOrderData.shippingCost) : deliveryFee) === 0 ? "FREE" : formatPrice(orderPlaced && placedOrderData ? placedOrderData.shippingCost : deliveryFee)}
                 </span>
               </div>
             </div>
@@ -719,7 +756,9 @@ export default function Checkout() {
             <div className="border-t border-border mt-4 pt-4">
               <div className="flex justify-between text-lg font-bold">
                 <span>Total</span>
-                <span className="text-foreground">{formatPrice(total)}</span>
+                <span className="text-foreground">
+                  {formatPrice(orderPlaced && placedOrderData ? placedOrderData.finalAmount : total)}
+                </span>
               </div>
             </div>
 

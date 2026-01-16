@@ -158,15 +158,34 @@ export default function Account() {
           else {
             // Parse string address
             const addressString = userData.address;
-            const parts = addressString.split(', ');
+            let parsedStreet = '';
+            let parsedCity = '';
+            let parsedState = '';
+            let parsedPincode = '';
+
+            // Try to parse as JSON first
+            try {
+              const parsed = JSON.parse(addressString);
+              parsedStreet = parsed.street || '';
+              parsedCity = parsed.city || '';
+              parsedState = parsed.state || '';
+              parsedPincode = parsed.pincode || '';
+            } catch (e) {
+              // Fallback to split if not JSON
+              const parts = addressString.split(', ');
+              parsedStreet = parts[0] || '';
+              parsedCity = parts.length > 1 ? parts.slice(1, -1).join(', ') : '';
+              parsedPincode = parts.length > 0 && /\d{6}/.test(parts[parts.length - 1]) ? parts[parts.length - 1] : '';
+            }
+
             primary = {
               id: 'primary',
               name: userData.name || '',
               phone: userData.phone || '',
-              street: parts[0] || '',
-              city: parts.length > 1 ? parts.slice(1, -1).join(', ') : '',
-              state: '',
-              pincode: parts.length > 0 && /\d{6}/.test(parts[parts.length - 1]) ? parts[parts.length - 1] : '',
+              street: parsedStreet,
+              city: parsedCity,
+              state: parsedState,
+              pincode: parsedPincode,
               isDefault: true,
               type: 'primary'
             };
