@@ -13,27 +13,9 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
-import axios from "axios";
-import { baseUrl } from '@/config/baseUrl';
-// Base API configuration
-const API_BASE_URL = baseUrl;
-// Create axios instance
-const createApiClient = () => {
-  const api = axios.create({
-    baseURL: API_BASE_URL,
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
-  api.interceptors.request.use((config) => {
-    const token = localStorage.getItem("authToken");
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  });
-  return api;
-};
+
+import api from "@/lib/api";
+
 export const OrderManagement = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -61,7 +43,7 @@ export const OrderManagement = () => {
     averageOrderValue: 0,
   });
   const { toast } = useToast();
-  const api = createApiClient();
+
   // Fetch orders from API
   const fetchOrders = async (page = 1) => {
     try {
@@ -83,7 +65,12 @@ export const OrderManagement = () => {
       const response = await api.get(`/admin/orders?${params}`);
       console.log("Orders API response:", response.data);
       if (response.data.success) {
-        setOrders(response.data.data.orders || []);
+        const ordersData = response.data.data.orders || [];
+        if (ordersData.length > 0) {
+          console.log("First order sample:", ordersData[0]);
+          console.log("First order createdAt:", ordersData[0].createdAt);
+        }
+        setOrders(ordersData);
         setPagination(response.data.data.pagination || {
           page: 1,
           limit: 20,
@@ -226,26 +213,52 @@ export const OrderManagement = () => {
       });
     }
   };
-  const handleExportOrders = async () => {
+  const handleExportOrders = () => {
     try {
-      const response = await api.get("/admin/orders/export", {
-        responseType: "blob",
+      if (orders.length === 0) {
+        toast({
+          title: "Export Failed",
+          description: "No orders to export",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Define CSV headers and map data
+      const csvHeaders = ["Order Number,Customer Name,Date,Status,Total Amount,Payment Method"];
+      const csvRows = orders.map(order => {
+        const date = new Date(order.createdAt || order.created_at).toLocaleDateString();
+        const customerName = order.user?.name || "Unknown";
+        // Escape commas in strings
+        const safeName = `"${customerName.replace(/"/g, '""')}"`;
+        const total = order.finalAmount || order.totalPrice || 0;
+
+        return [
+          order.orderNumber,
+          safeName,
+          date,
+          order.orderStatus,
+          total,
+          order.paymentMethod
+        ].join(",");
       });
-      const blob = response.data;
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `orders_${new Date().toISOString().split("T")[0]}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+
+      const csvString = [csvHeaders, ...csvRows].join("\n");
+      const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `orders_export_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
       toast({
         title: "Success",
-        description: "Orders exported successfully",
+        description: `Exported ${orders.length} orders successfully`,
       });
-    }
-    catch (error) {
+    } catch (error) {
+      console.error("Export error:", error);
       toast({
         title: "Error",
         description: "Failed to export orders",
@@ -253,6 +266,7 @@ export const OrderManagement = () => {
       });
     }
   };
+
   // Get status badge with proper styling
   const getStatusBadge = (status) => {
     const styles = {
@@ -306,24 +320,45 @@ export const OrderManagement = () => {
   };
   // Parse address from order
   const parseAddress = (address) => {
-    if (!address)
-      return "No address provided";
+    if (!address) return "No address provided";
+
+    let addrObj = address;
+    // Try parsing if it's a string that looks like JSON
     if (typeof address === "string") {
-      return address;
+      if (address.trim().startsWith('{')) {
+        try {
+          addrObj = JSON.parse(address);
+        } catch (e) {
+          // It's just a plain string or invalid JSON
+          return address;
+        }
+      } else {
+        return address;
+      }
     }
-    // Handle address object
-    const parts = [];
-    if (address.street)
-      parts.push(address.street);
-    if (address.city)
-      parts.push(address.city);
-    if (address.state)
-      parts.push(address.state);
-    if (address.pincode)
-      parts.push(address.pincode);
-    if (address.country)
-      parts.push(address.country);
-    return parts.join(", ");
+
+    // Return formatted JSX if we have an object
+    if (typeof addrObj === 'object' && addrObj !== null) {
+      return (
+        <div className="flex flex-col gap-0.5 text-sm">
+          {addrObj.name && <span className="font-semibold">{addrObj.name}</span>}
+          {addrObj.phone && <span>{addrObj.phone}</span>}
+          <span>
+            {addrObj.street || ''}
+            {addrObj.street && (addrObj.city || addrObj.state || addrObj.pincode) ? ', ' : ''}
+            {addrObj.city || ''}
+          </span>
+          <span>
+            {addrObj.state || ''}
+            {addrObj.state && addrObj.pincode ? ' - ' : ''}
+            {addrObj.pincode || ''}
+          </span>
+          {addrObj.country && <span>{addrObj.country}</span>}
+        </div>
+      );
+    }
+
+    return String(address);
   };
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat("en-IN", {
@@ -335,18 +370,27 @@ export const OrderManagement = () => {
   };
   // Format date for display
   const formatOrderDate = (dateString) => {
+    // DEBUG: Log the date string to check what we are receiving
+    // console.log("Formatting date:", dateString, typeof dateString); 
+
+    if (!dateString) return "N/A";
     try {
       const date = new Date(dateString);
+      // Check if date is valid
+      if (isNaN(date.getTime())) {
+        return "N/A"; // Handle invalid date string
+      }
       return date.toLocaleDateString("en-IN", {
         day: "2-digit",
         month: "short",
         year: "numeric",
         hour: "2-digit",
         minute: "2-digit",
+        hour12: true
       });
     }
     catch (e) {
-      return dateString;
+      return "N/A";
     }
   };
   // Calculate total items in order
@@ -375,6 +419,16 @@ export const OrderManagement = () => {
       const price = typeof item.price === "string" ? parseFloat(item.price) : item.price;
       return total + price * item.quantity;
     }, 0);
+  };
+
+  // Get absolute final amount (including shipping/tax)
+  const getFinalAmount = (order) => {
+    if (order.finalAmount !== undefined && order.finalAmount !== null) {
+      return typeof order.finalAmount === "string"
+        ? parseFloat(order.finalAmount)
+        : order.finalAmount;
+    }
+    return calculateOrderTotal(order);
   };
   return (<div className="space-y-6">
     {/* Header */}
@@ -610,7 +664,7 @@ export const OrderManagement = () => {
 
                   <TableCell>
                     <div className="font-medium">
-                      {formatCurrency(calculateOrderTotal(order))}
+                      {formatCurrency(getFinalAmount(order))}
                     </div>
                   </TableCell>
 
@@ -753,7 +807,7 @@ export const OrderManagement = () => {
                     <div>
                       <p className="text-sm text-muted-foreground">Total Amount</p>
                       <p className="font-medium text-lg">
-                        {formatCurrency(calculateOrderTotal(selectedOrder))}
+                        {formatCurrency(getFinalAmount(selectedOrder))}
                       </p>
                     </div>
                   </div>
@@ -768,7 +822,7 @@ export const OrderManagement = () => {
                         <div className="text-sm">
                           <p className="font-medium">{selectedOrder.customerName}</p>
                           <p className="text-muted-foreground">{selectedOrder.customerPhone}</p>
-                          <p className="mt-2">{parseAddress(selectedOrder.shippingAddress)}</p>
+                          <div className="mt-2 text-sm">{parseAddress(selectedOrder.shippingAddress)}</div>
                         </div>
                       </div>
                     </div>
@@ -878,13 +932,13 @@ export const OrderManagement = () => {
                             <span className="text-muted-foreground">Shipping</span>
                             <span>{formatCurrency(typeof selectedOrder.shippingCost === "string"
                               ? parseFloat(selectedOrder.shippingCost)
-                              : selectedOrder.shippingCost || calculateOrderTotal(selectedOrder))}</span>
+                              : selectedOrder.shippingCost || 0)}</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Tax</span>
                             <span>{formatCurrency(typeof selectedOrder.taxAmount === "string"
                               ? parseFloat(selectedOrder.taxAmount)
-                              : selectedOrder.taxAmount || calculateOrderTotal(selectedOrder))}</span>
+                              : selectedOrder.taxAmount || 0)}</span>
                           </div>
                           <Separator />
                           <div className="flex justify-between items-center pt-2">

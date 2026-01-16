@@ -1,4 +1,4 @@
-import { Review, Product, User, Order } from '../models/index.js';
+import { Review, Product, User, Order, Sequelize } from '../models/index.js';
 
 /**
  * @desc    Get reviews for a product
@@ -10,10 +10,10 @@ export const getProductReviews = async (req, res) => {
     const { productId } = req.params;
     const { page = 1, limit = 10, rating } = req.query;
     const offset = (page - 1) * limit;
-    
+
     const where = { productId: parseInt(productId), isApproved: true };
     if (rating) where.rating = parseInt(rating);
-    
+
     const { count, rows: reviews } = await Review.findAndCountAll({
       where,
       limit: parseInt(limit),
@@ -27,14 +27,14 @@ export const getProductReviews = async (req, res) => {
         }
       ]
     });
-    
+
     // Calculate average rating
     const avgRating = await Review.findOne({
       where: { productId: parseInt(productId), isApproved: true },
       attributes: [[Sequelize.fn('AVG', Sequelize.col('rating')), 'averageRating']],
       raw: true
     });
-    
+
     // Get rating distribution
     const ratingDistribution = await Review.findAll({
       where: { productId: parseInt(productId), isApproved: true },
@@ -45,7 +45,7 @@ export const getProductReviews = async (req, res) => {
       group: ['rating'],
       order: [['rating', 'DESC']]
     });
-    
+
     // Update product rating
     if (avgRating?.averageRating) {
       await Product.update(
@@ -53,7 +53,7 @@ export const getProductReviews = async (req, res) => {
         { where: { id: productId } }
       );
     }
-    
+
     res.status(200).json({
       success: true,
       data: {
@@ -88,7 +88,7 @@ export const getProductReviews = async (req, res) => {
 export const createReview = async (req, res) => {
   try {
     const { productId, rating, comment, images } = req.body;
-    
+
     // Validate required fields
     if (!productId || !rating) {
       return res.status(400).json({
@@ -96,14 +96,14 @@ export const createReview = async (req, res) => {
         message: 'Product ID and rating are required'
       });
     }
-    
+
     if (rating < 1 || rating > 5) {
       return res.status(400).json({
         success: false,
         message: 'Rating must be between 1 and 5'
       });
     }
-    
+
     // Check if product exists
     const product = await Product.findByPk(productId);
     if (!product) {
@@ -112,7 +112,7 @@ export const createReview = async (req, res) => {
         message: 'Product not found'
       });
     }
-    
+
     // Check if user has purchased this product
     const hasPurchased = await Order.findOne({
       where: {
@@ -123,14 +123,14 @@ export const createReview = async (req, res) => {
         }
       }
     });
-    
+
     if (!hasPurchased && req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
         message: 'You must purchase this product before reviewing it'
       });
     }
-    
+
     // Check if user already reviewed this product
     const existingReview = await Review.findOne({
       where: {
@@ -138,14 +138,14 @@ export const createReview = async (req, res) => {
         userId: req.user.id
       }
     });
-    
+
     if (existingReview) {
       return res.status(400).json({
         success: false,
         message: 'You have already reviewed this product'
       });
     }
-    
+
     // Create review
     const review = await Review.create({
       productId,
@@ -155,10 +155,10 @@ export const createReview = async (req, res) => {
       images: images || [],
       isApproved: req.user.role === 'admin' // Auto-approve for admin
     });
-    
+
     // Update product rating
     await updateProductRating(productId);
-    
+
     // Get created review with user details
     const createdReview = await Review.findByPk(review.id, {
       include: [
@@ -174,7 +174,7 @@ export const createReview = async (req, res) => {
         }
       ]
     });
-    
+
     res.status(201).json({
       success: true,
       message: 'Review submitted successfully',
@@ -197,14 +197,14 @@ export const createReview = async (req, res) => {
 export const updateReview = async (req, res) => {
   try {
     const review = await Review.findByPk(req.params.id);
-    
+
     if (!review) {
       return res.status(404).json({
         success: false,
         message: 'Review not found'
       });
     }
-    
+
     // Check ownership
     if (review.userId !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({
@@ -212,17 +212,17 @@ export const updateReview = async (req, res) => {
         message: 'Not authorized to update this review'
       });
     }
-    
+
     // Update review
     await review.update({
       rating: req.body.rating || review.rating,
       comment: req.body.comment !== undefined ? req.body.comment : review.comment,
       images: req.body.images !== undefined ? req.body.images : review.images
     });
-    
+
     // Update product rating
     await updateProductRating(review.productId);
-    
+
     // Get updated review with user details
     const updatedReview = await Review.findByPk(review.id, {
       include: [
@@ -238,7 +238,7 @@ export const updateReview = async (req, res) => {
         }
       ]
     });
-    
+
     res.status(200).json({
       success: true,
       message: 'Review updated successfully',
@@ -261,14 +261,14 @@ export const updateReview = async (req, res) => {
 export const deleteReview = async (req, res) => {
   try {
     const review = await Review.findByPk(req.params.id);
-    
+
     if (!review) {
       return res.status(404).json({
         success: false,
         message: 'Review not found'
       });
     }
-    
+
     // Check ownership
     if (review.userId !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({
@@ -276,15 +276,15 @@ export const deleteReview = async (req, res) => {
         message: 'Not authorized to delete this review'
       });
     }
-    
+
     const productId = review.productId;
-    
+
     // Delete review
     await review.destroy();
-    
+
     // Update product rating
     await updateProductRating(productId);
-    
+
     res.status(200).json({
       success: true,
       message: 'Review deleted successfully'
@@ -306,17 +306,17 @@ export const deleteReview = async (req, res) => {
 export const markHelpful = async (req, res) => {
   try {
     const review = await Review.findByPk(req.params.id);
-    
+
     if (!review) {
       return res.status(404).json({
         success: false,
         message: 'Review not found'
       });
     }
-    
+
     // Increment helpful count
     await review.increment('helpfulCount');
-    
+
     res.status(200).json({
       success: true,
       message: 'Review marked as helpful',
@@ -343,7 +343,7 @@ export const getMyReviews = async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
     const offset = (page - 1) * limit;
-    
+
     const { count, rows: reviews } = await Review.findAndCountAll({
       where: { userId: req.user.id },
       limit: parseInt(limit),
@@ -357,7 +357,7 @@ export const getMyReviews = async (req, res) => {
         }
       ]
     });
-    
+
     res.status(200).json({
       success: true,
       data: {
@@ -392,7 +392,7 @@ const updateProductRating = async (productId) => {
       ],
       raw: true
     });
-    
+
     if (stats) {
       await Product.update(
         {

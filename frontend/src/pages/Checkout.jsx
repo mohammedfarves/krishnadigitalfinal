@@ -8,25 +8,7 @@ import { ScratchToReveal } from "@/components/ui/scratch-to-reveal";
 import { Confetti } from "@/components/ui/confetti";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import axios from "axios";
-import { baseUrl } from '@/config/baseUrl';
-// Base API configuration
-const API_BASE_URL = baseUrl;
-// Create axios instance with auth interceptor
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    "Content-Type": "application/json",
-  },
-});
-// Request interceptor for adding auth token
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("authToken");
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-}, (error) => Promise.reject(error));
+import api from "@/lib/api";
 const iconMap = {
   tv: Tv,
   "washing-machine": WashingMachine,
@@ -309,6 +291,7 @@ export default function Checkout() {
         paymentMethod: paymentMethod.toLowerCase(),
         notes: `Delivery: ${deliveryOption === "express" ? "Express (₹99)" : "Standard (Free)"}`,
         billingAddress: shippingAddress,
+        deliveryType: deliveryOption, // Send delivery type (standard/express)
       };
       console.log("🚀 Order payload:", orderPayload);
       // Direct endpoint call
@@ -327,6 +310,11 @@ export default function Checkout() {
         // On success, save order details for display
         setPlacedOrderData(response.data.data || response.data.order);
         setOrderPlaced(true);
+        // Force update cart count in header
+        window.dispatchEvent(new Event('cartUpdated'));
+        window.dispatchEvent(new Event('refreshCart'));
+        await fetchCart();
+
         setTimeout(() => setShowConfetti(true), 300);
         setTimeout(() => {
           toast.success("Order placed successfully!", {
@@ -334,7 +322,6 @@ export default function Checkout() {
           });
         }, 600);
         setTimeout(() => setShowScratch(true), 1500);
-        await fetchCart();
       }
     }
     catch (err) {
@@ -648,9 +635,25 @@ export default function Checkout() {
           <p className="text-muted-foreground mb-4">
             Thank you for your order. You will receive a confirmation SMS shortly.
           </p>
-          {showScratch && (<div className="mb-4">
-            <ScratchToReveal onComplete={handleScratchComplete} revealText="🎉 10% OFF" className="mx-auto" />
-            <p className="text-xs text-muted-foreground mt-2">Scratch to reveal your surprise reward!</p>
+          {showScratch && (<div className="mb-4 relative">
+            <div className="absolute inset-0 bg-gradient-to-r from-yellow-300 via-yellow-500 to-yellow-300 opacity-20 blur-xl animate-pulse"></div>
+            <div className="relative bg-card border-2 border-dashed border-accent/50 rounded-xl p-4 shadow-lg hover:shadow-xl transition-shadow cursor-pointer">
+              <ScratchToReveal
+                width={250}
+                height={150}
+                minScratchPercentage={40}
+                onComplete={handleScratchComplete}
+                className="mx-auto rounded-lg overflow-hidden"
+                gradientColors={["#FFD700", "#FFA500", "#FFD700"]}
+              >
+                <div className="flex flex-col items-center justify-center w-full h-full bg-gradient-to-br from-indigo-900 to-purple-900 text-white p-4 text-center">
+                  <h4 className="text-2xl font-black text-yellow-400 mb-1">10% OFF</h4>
+                  <p className="text-sm font-medium opacity-90">Coupon Code:</p>
+                  <div className="bg-white/20 px-3 py-1 rounded mt-1 font-mono font-bold tracking-widest border border-white/30">LUCKY10</div>
+                </div>
+              </ScratchToReveal>
+            </div>
+            <p className="text-xs font-medium text-accent mt-3 animate-bounce">✨ Scratch above to reveal your surprise reward! ✨</p>
           </div>)}
         </div>
         <div className="flex gap-3">

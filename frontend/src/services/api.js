@@ -1,21 +1,5 @@
-import axios from 'axios';
-import { baseUrl } from '@/config/baseUrl';
-// Base API configuration
-const API_BASE_URL = baseUrl;
-const api = axios.create({
-    baseURL: API_BASE_URL,
-    headers: {
-        'Content-Type': 'application/json',
-    },
-});
-// Request interceptor for adding auth token
-api.interceptors.request.use((config) => {
-    const token = localStorage.getItem('authToken');
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-}, (error) => Promise.reject(error));
+import api from "@/lib/api";
+
 // Response interceptor for error handling
 api.interceptors.response.use((response) => {
     // Ensure consistent response format

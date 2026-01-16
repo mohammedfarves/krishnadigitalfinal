@@ -427,8 +427,12 @@ export function ProductCard({ product, variant = "default", selectedColor }) {
         setIsWishlisted(isInWishlist(id));
     }, [id]);
     const goToProduct = useCallback(() => {
+        if (!slug) {
+            console.error("Product has no slug or ID:", product);
+            return;
+        }
         navigate(`/product/${slug}`);
-    }, [navigate, slug]);
+    }, [navigate, slug, product]);
     const onCardKeyDown = useCallback((e) => {
         if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
@@ -445,6 +449,14 @@ export function ProductCard({ product, variant = "default", selectedColor }) {
     const handleAddToCart = async (e) => {
         e.preventDefault();
         e.stopPropagation();
+
+        // Check authentication
+        const token = localStorage.getItem("authToken");
+        if (!token) {
+            window.dispatchEvent(new Event('openSignup'));
+            return;
+        }
+
         if (isAddingToCart)
             return;
         setIsAddingToCart(true);
@@ -485,23 +497,16 @@ export function ProductCard({ product, variant = "default", selectedColor }) {
                 setIsAddingToCart(false);
                 toast({
                     title: "Error",
-                    description: "Please sign in to add items to your cart.",
+                    description: "Failed to add item to cart.",
                     variant: "destructive",
                 });
             }
         }
         catch (err) {
             setIsAddingToCart(false);
-            if (err?.status === 401) {
-                toast({
-                    title: 'Sign in required',
-                    description: 'Please sign in to add items to your cart.'
-                });
-                return;
-            }
             toast({
                 title: 'Error',
-                description: err?.message || 'Please sign in to add items to your cart.',
+                description: err?.message || 'Failed to add item to cart.',
                 variant: "destructive"
             });
         }
@@ -588,16 +593,15 @@ export function ProductCard({ product, variant = "default", selectedColor }) {
             <button type="button" onClick={handleAddToCart} disabled={isAddingToCart} className={`w-full text-sm font-medium py-3 rounded-lg flex items-center justify-center gap-2 transition-all duration-300 active:scale-95 overflow-hidden ${showSuccess
                 ? 'bg-emerald-500 text-white'
                 : 'bg-accent text-accent-foreground hover:bg-accent/90 hover:shadow-md hover:shadow-accent/20'}`}>
-                {showSuccess ? (<span className="inline-flex items-center gap-2 animate-check-appear">
+                {showSuccess ? (<span className="inline-flex items-center gap-2 animate-in zoom-in duration-300">
                     <Check className="w-4 h-4" />
                     <span>Added!</span>
+                </span>) : isAddingToCart ? (<span className="inline-flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    <span>Adding...</span>
                 </span>) : (<>
-                    <span className={`inline-flex items-center justify-center transition-all duration-300 ${isAddingToCart ? 'animate-cart-fly' : ''}`}>
-                        <ShoppingCart className="w-4 h-4" />
-                    </span>
-                    <span className={`transition-all duration-200 ${isAddingToCart ? 'opacity-0 scale-75' : 'opacity-100 scale-100'}`}>
-                        Add to Cart
-                    </span>
+                    <ShoppingCart className="w-4 h-4" />
+                    <span>Add to Cart</span>
                 </>)}
             </button>
         </article>);
@@ -646,16 +650,15 @@ export function ProductCard({ product, variant = "default", selectedColor }) {
         <button type="button" onClick={handleAddToCart} disabled={isAddingToCart} className={`w-full flex items-center justify-center gap-2 py-2.5 text-sm transition-all duration-300 active:scale-95 overflow-hidden rounded-md font-medium ${showSuccess
             ? 'bg-emerald-500 text-white'
             : 'btn-primary hover:shadow-lg hover:shadow-accent/20'}`}>
-            {showSuccess ? (<span className="inline-flex items-center gap-2 animate-check-appear">
+            {showSuccess ? (<span className="inline-flex items-center gap-2 animate-in zoom-in duration-300">
                 <Check className="w-4 h-4" />
                 <span>Added!</span>
+            </span>) : isAddingToCart ? (<span className="inline-flex items-center gap-2">
+                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                <span>Adding...</span>
             </span>) : (<>
-                <span className={`inline-flex items-center justify-center transition-all duration-300 ${isAddingToCart ? 'animate-cart-fly' : ''}`}>
-                    <ShoppingCart className="w-4 h-4" />
-                </span>
-                <span className={`transition-all duration-200 ${isAddingToCart ? 'opacity-0 scale-75' : 'opacity-100 scale-100'}`}>
-                    Add to Cart
-                </span>
+                <ShoppingCart className="w-4 h-4" />
+                <span>Add to Cart</span>
             </>)}
         </button>
     </article>);

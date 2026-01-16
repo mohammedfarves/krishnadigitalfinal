@@ -1,10 +1,10 @@
-import { 
-  User, 
-  Order, 
-  Product, 
-  Review, 
-  Coupon, 
-  Category, 
+import {
+  User,
+  Order,
+  Product,
+  Review,
+  Coupon,
+  Category,
   Brand,
   UserCoupon,
   sequelize
@@ -26,39 +26,39 @@ import { createObjectCsvStringifier } from 'csv-writer';
 export const getDashboardStats = async (req, res) => {
   try {
     console.log('=== Getting Dashboard Basic Stats ===');
-    
+
     // Get basic counts with individual try-catch for each
     let totalUsers = 0;
     let totalProducts = 0;
     let totalOrders = 0;
-    
+
     try {
       // Total active customers
-      totalUsers = await User.count({ 
-        where: { 
+      totalUsers = await User.count({
+        where: {
           role: 'customer',
-          isActive: true 
-        } 
+          isActive: true
+        }
       });
       console.log('Total users count:', totalUsers);
     } catch (error) {
       console.error('Error counting users:', error.message);
       totalUsers = 0;
     }
-    
+
     try {
       // Total active products
-      totalProducts = await Product.count({ 
-        where: { 
-          isActive: true 
-        } 
+      totalProducts = await Product.count({
+        where: {
+          isActive: true
+        }
       });
       console.log('Total products count:', totalProducts);
     } catch (error) {
       console.error('Error counting products:', error.message);
       totalProducts = 0;
     }
-    
+
     try {
       // Total orders (all orders)
       totalOrders = await Order.count();
@@ -67,37 +67,128 @@ export const getDashboardStats = async (req, res) => {
       console.error('Error counting orders:', error.message);
       totalOrders = 0;
     }
-    
-    // Prepare response data with only the three basic counts
+
+    // Fetch orders: Prioritize Pending, but also show Recent
+    let recentOrders = [];
+    try {
+      // 1. Fetch top 10 Pending
+      const pendingOrders = await Order.findAll({
+        where: { orderStatus: 'pending' },
+        limit: 10,
+        order: [['id', 'DESC']],
+        include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email'] }]
+      });
+
+      // 2. Fetch top 5 Recent (any status)
+      const latestOrders = await Order.findAll({
+        limit: 5,
+        order: [['id', 'DESC']],
+        include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email'] }]
+      });
+
+      // 3. Merge and Deduplicate
+      const orderMap = new Map();
+      pendingOrders.forEach(o => orderMap.set(o.id, o));
+      latestOrders.forEach(o => orderMap.set(o.id, o));
+
+      // Convert to array and sort by ID desc
+      recentOrders = Array.from(orderMap.values())
+        .sort((a, b) => b.id - a.id)
+        .slice(0, 10); // Show max 10 cards
+
+    } catch (err) {
+      console.error("Dashboard Recent Orders Error:", err.message);
+    }
+
+    // Fetch popular products based on Sales Quantity
+    let popularProducts = [];
+    try {
+      // 1. Fetch recent 200 orders to calculate popularity
+      const ordersForStats = await Order.findAll({
+        limit: 200,
+        attributes: ['orderItems'],
+        order: [['id', 'DESC']]
+      });
+
+      // 2. Aggregate quantities
+      const productSales = {};
+      ordersForStats.forEach(order => {
+        let items = order.orderItems;
+        // Parse if string
+        if (typeof items === 'string') {
+          try { items = JSON.parse(items); } catch (e) { items = []; }
+        }
+        if (Array.isArray(items)) {
+          items.forEach(item => {
+            // Handle various structures: item.id, item.productId, item.product.id
+            const pId = item.productId || (item.product ? item.product.id : item.id);
+            const qty = item.quantity || 0;
+            if (pId && qty) {
+              productSales[pId] = (productSales[pId] || 0) + parseInt(qty);
+            }
+          });
+        }
+      });
+
+      // 3. Sort by sales
+      const sortedIds = Object.keys(productSales).sort((a, b) => productSales[b] - productSales[a]).slice(0, 5);
+
+      if (sortedIds.length > 0) {
+        // 4. Fetch product details
+        popularProducts = await Product.findAll({
+          where: { id: sortedIds },
+          attributes: ['id', 'name', 'price', 'rating', 'totalReviews', 'colorsAndImages']
+        });
+
+        // 5. Re-sort to match sales order (Product.findAll returns unsorted)
+        popularProducts.sort((a, b) => {
+          const salesA = productSales[a.id] || 0;
+          const salesB = productSales[b.id] || 0;
+          return salesB - salesA;
+        });
+      } else {
+        // Fallback to rating if no sales
+        popularProducts = await Product.findAll({
+          where: { isActive: true },
+          limit: 5,
+          order: [['rating', 'DESC'], ['totalReviews', 'DESC']],
+          attributes: ['id', 'name', 'price', 'rating', 'totalReviews', 'colorsAndImages']
+        });
+      }
+
+    } catch (err) {
+      console.error("Dashboard Popular Products Error:", err.message);
+    }
+
+    // Prepare response data
     const responseData = {
       counts: {
         totalUsers: totalUsers,
         totalProducts: totalProducts,
         totalOrders: totalOrders,
-        // Set other fields to 0 or empty to maintain structure
         totalRevenue: 0,
         monthlyRevenue: 0,
         yearlyRevenue: 0,
         newUsersThisMonth: 0,
         newOrdersThisMonth: 0
       },
-      recentOrders: [], // Empty array
-      popularProducts: [] // Empty array
+      recentOrders: recentOrders,
+      popularProducts: popularProducts
     };
-    
+
     console.log('Sending response data:', responseData);
-    
+
     res.status(200).json({
       success: true,
       message: 'Dashboard statistics fetched successfully',
       data: responseData
     });
-    
+
   } catch (error) {
     console.error('=== Get dashboard stats CRITICAL ERROR ===');
     console.error('Error:', error.message);
     console.error('Error stack:', error.stack);
-    
+
     // Return empty data structure on error
     res.status(200).json({
       success: true,
@@ -163,7 +254,7 @@ export const testStats = async (req, res) => {
 export const sendBirthdayWishes = async (req, res) => {
   try {
     const result = await checkBirthdaysAndSendWishes();
-    
+
     res.status(200).json({
       success: true,
       message: result.message,
@@ -192,14 +283,14 @@ export const sendBirthdayWishes = async (req, res) => {
 export const broadcastCoupon = async (req, res) => {
   try {
     const { couponData } = req.body;
-    
+
     if (!couponData || !couponData.code || !couponData.discountValue) {
       return res.status(400).json({
         success: false,
         message: 'Coupon data is required'
       });
     }
-    
+
     // Create coupon
     const coupon = await Coupon.create({
       ...couponData,
@@ -207,7 +298,7 @@ export const broadcastCoupon = async (req, res) => {
       validUntil: couponData.validUntil || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       isActive: true
     });
-    
+
     // Get all active users
     const users = await User.findAll({
       where: {
@@ -217,13 +308,13 @@ export const broadcastCoupon = async (req, res) => {
       },
       attributes: ['id']
     });
-    
+
     // Assign coupon to users (in batches for performance)
     const batchSize = 100;
     const batches = Math.ceil(users.length / batchSize);
-    
+
     const userCouponsArray = [];
-    
+
     for (let i = 0; i < batches; i++) {
       const batch = users.slice(i * batchSize, (i + 1) * batchSize);
       const userCoupons = batch.map(user => ({
@@ -231,18 +322,18 @@ export const broadcastCoupon = async (req, res) => {
         couponId: coupon.id,
         isUsed: false
       }));
-      
+
       userCouponsArray.push(...userCoupons);
     }
-    
+
     // Bulk create all user coupons
     if (userCouponsArray.length > 0) {
-      await UserCoupon.bulkCreate(userCouponsArray, { 
+      await UserCoupon.bulkCreate(userCouponsArray, {
         ignoreDuplicates: true,
-        validate: true 
+        validate: true
       });
     }
-    
+
     res.status(201).json({
       success: true,
       message: `Coupon broadcasted to ${users.length} users`,
@@ -276,7 +367,7 @@ export const exportUsers = async (req, res) => {
       ],
       order: [['createdAt', 'DESC']]
     });
-    
+
     // Format data for CSV
     const csvData = users.map(user => ({
       id: user.id,
@@ -292,7 +383,7 @@ export const exportUsers = async (req, res) => {
       giftReceived: user.giftReceived ? 'Yes' : 'No',
       memberSince: format(new Date(user.createdAt), 'yyyy-MM-dd HH:mm:ss')
     }));
-    
+
     // Create CSV stringifier
     const csvStringifier = createObjectCsvStringifier({
       header: [
@@ -310,13 +401,13 @@ export const exportUsers = async (req, res) => {
         { id: 'memberSince', title: 'Member Since' }
       ]
     });
-    
+
     const csvString = csvStringifier.getHeaderString() + csvStringifier.stringifyRecords(csvData);
-    
+
     // Set headers for CSV download
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename=users_${format(new Date(), 'yyyy-MM-dd')}.csv`);
-    
+
     res.status(200).send(csvString);
   } catch (error) {
     console.error('Export users error:', error);
@@ -346,16 +437,16 @@ export const searchUsers = async (req, res) => {
       sortBy = 'createdAt',
       sortOrder = 'desc'
     } = req.query;
-    
+
     const offset = (page - 1) * limit;
-    
+
     // Build where clause
     const where = {};
-    
+
     if (role) where.role = role;
     if (isVerified !== undefined) where.isVerified = isVerified === 'true';
     if (isActive !== undefined) where.isActive = isActive === 'true';
-    
+
     if (search) {
       where[Op.or] = [ // Use Op instead of Sequelize.Op
         { name: { [Op.like]: `%${search}%` } },
@@ -365,25 +456,25 @@ export const searchUsers = async (req, res) => {
         { customerCode: { [Op.like]: `%${search}%` } }
       ];
     }
-    
+
     if (dateFrom || dateTo) {
       where.createdAt = {};
       if (dateFrom) where.createdAt[Op.gte] = new Date(dateFrom); // Use Op
       if (dateTo) where.createdAt[Op.lte] = new Date(dateTo); // Use Op
     }
-    
+
     // Validate sort field
     const allowedSortFields = ['id', 'name', 'phone', 'email', 'role', 'createdAt', 'updatedAt'];
     const validSortBy = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
     const validSortOrder = ['asc', 'desc'].includes(sortOrder.toLowerCase()) ? sortOrder.toLowerCase() : 'desc';
-    
+
     const { count, rows: users } = await User.findAndCountAll({
       where,
       limit: parseInt(limit),
       offset: parseInt(offset),
       order: [[validSortBy, validSortOrder]],
     });
-    
+
     res.status(200).json({
       success: true,
       data: {
@@ -422,14 +513,14 @@ export const getUserDetails = async (req, res) => {
   try {
     // Get basic user info first
     const user = await User.findByPk(req.params.id);
-    
+
     if (!user) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
       });
     }
-    
+
     // Get orders separately (simpler query)
     let orders = [];
     try {
@@ -441,7 +532,7 @@ export const getUserDetails = async (req, res) => {
     } catch (orderError) {
       console.error('Error fetching orders:', orderError.message);
     }
-    
+
     // Get reviews separately
     let reviews = [];
     try {
@@ -453,13 +544,13 @@ export const getUserDetails = async (req, res) => {
     } catch (reviewError) {
       console.error('Error fetching reviews:', reviewError.message);
     }
-    
+
     // Calculate stats
     const orderCount = await Order.count({ where: { userId: user.id } });
-    const totalSpent = await Order.sum('final_amount', { 
-      where: { userId: user.id } 
+    const totalSpent = await Order.sum('final_amount', {
+      where: { userId: user.id }
     }) || 0;
-    
+
     const userData = user.toJSON();
     userData.orders = orders.map(order => ({
       id: order.id,
@@ -468,20 +559,20 @@ export const getUserDetails = async (req, res) => {
       orderStatus: order.order_status,
       createdAt: order.created_at
     }));
-    
+
     userData.reviews = reviews.map(review => ({
       id: review.id,
       rating: review.rating,
       comment: review.comment,
       createdAt: review.created_at
     }));
-    
+
     userData.stats = {
       orderCount,
       totalSpent: parseFloat(totalSpent),
       avgOrderValue: orderCount > 0 ? parseFloat(totalSpent) / orderCount : 0
     };
-    
+
     res.status(200).json({
       success: true,
       data: userData
@@ -494,7 +585,7 @@ export const getUserDetails = async (req, res) => {
       sql: error.sql,
       stack: error.stack
     });
-    
+
     res.status(500).json({
       success: false,
       message: 'Server error while fetching user details',
@@ -510,14 +601,14 @@ export const getUserDetails = async (req, res) => {
 export const updateUser = async (req, res) => {
   try {
     const user = await User.findByPk(req.params.id);
-    
+
     if (!user) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
       });
     }
-    
+
     // Don't allow changing own role or deactivating own account
     if (req.user.id === user.id && (req.body.role || req.body.isActive === false)) {
       return res.status(400).json({
@@ -525,13 +616,13 @@ export const updateUser = async (req, res) => {
         message: 'Cannot change your own role or deactivate your own account'
       });
     }
-    
+
     // Update user
     await user.update(req.body);
-    
+
     const updatedUser = await User.findByPk(req.params.id, {
     });
-    
+
     res.status(200).json({
       success: true,
       message: 'User updated successfully',
@@ -539,7 +630,7 @@ export const updateUser = async (req, res) => {
     });
   } catch (error) {
     console.error('Update user error:', error);
-    
+
     if (error.name === 'SequelizeUniqueConstraintError') {
       const field = error.errors[0].path;
       return res.status(400).json({
@@ -547,7 +638,7 @@ export const updateUser = async (req, res) => {
         message: `${field} already exists`
       });
     }
-    
+
     res.status(500).json({
       success: false,
       message: 'Server error while updating user'
@@ -563,14 +654,14 @@ export const updateUser = async (req, res) => {
 export const toggleUserStatus = async (req, res) => {
   try {
     const user = await User.findByPk(req.params.id);
-    
+
     if (!user) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
       });
     }
-    
+
     // Don't allow deactivating own account
     if (req.user.id === user.id && user.isActive) {
       return res.status(400).json({
@@ -578,10 +669,10 @@ export const toggleUserStatus = async (req, res) => {
         message: 'Cannot deactivate your own account'
       });
     }
-    
+
     // Toggle status
     await user.update({ isActive: !user.isActive });
-    
+
     res.status(200).json({
       success: true,
       message: `User ${user.isActive ? 'activated' : 'deactivated'} successfully`,
@@ -607,14 +698,14 @@ export const toggleUserStatus = async (req, res) => {
 export const deleteUser = async (req, res) => {
   try {
     const user = await User.findByPk(req.params.id);
-    
+
     if (!user) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
       });
     }
-    
+
     // Don't allow deleting own account
     if (req.user.id === user.id) {
       return res.status(400).json({
@@ -622,13 +713,13 @@ export const deleteUser = async (req, res) => {
         message: 'Cannot delete your own account'
       });
     }
-    
+
     // Soft delete (deactivate)
     await user.update({ isActive: false });
-    
+
     // Optional: Archive user data
     // await user.destroy(); // For hard delete
-    
+
     res.status(200).json({
       success: true,
       message: 'User deactivated successfully'
@@ -651,7 +742,7 @@ export const getUserOrdersAdmin = async (req, res) => {
   try {
     const { page = 1, limit = 20 } = req.query;
     const offset = (page - 1) * limit;
-    
+
     const { count, rows: orders } = await Order.findAndCountAll({
       where: { userId: req.params.id },
       limit: parseInt(limit),
@@ -665,7 +756,7 @@ export const getUserOrdersAdmin = async (req, res) => {
         }
       ]
     });
-    
+
     res.status(200).json({
       success: true,
       data: {
@@ -696,7 +787,7 @@ export const getUserReviewsAdmin = async (req, res) => {
   try {
     const { page = 1, limit = 20 } = req.query;
     const offset = (page - 1) * limit;
-    
+
     const { count, rows: reviews } = await Review.findAndCountAll({
       where: { userId: req.params.id },
       limit: parseInt(limit),
@@ -715,7 +806,7 @@ export const getUserReviewsAdmin = async (req, res) => {
         }
       ]
     });
-    
+
     res.status(200).json({
       success: true,
       data: {
@@ -754,14 +845,14 @@ export const getUserCartAdmin = async (req, res) => {
         }
       ]
     });
-    
+
     if (!cart) {
       return res.status(404).json({
         success: false,
         message: 'Cart not found'
       });
     }
-    
+
     res.status(200).json({
       success: true,
       data: cart
@@ -783,7 +874,7 @@ export const getUserCartAdmin = async (req, res) => {
 export const getCustomerAnalytics = async (req, res) => {
   try {
     console.log('=== Getting Customer Analytics ===');
-    
+
     // Get total active customers
     const totalCustomers = await User.count({
       where: {
@@ -791,7 +882,7 @@ export const getCustomerAnalytics = async (req, res) => {
         isActive: true
       }
     }).catch(() => 0);
-    
+
     // Get all customers with their order count
     const customers = await User.findAll({
       where: {
@@ -831,11 +922,11 @@ export const getCustomerAnalytics = async (req, res) => {
       order: [['created_at', 'DESC']],
       limit: 50
     });
-    
+
     // Calculate ordered vs signup-only customers
     let orderedCustomers = 0;
     let signupOnlyCustomers = 0;
-    
+
     customers.forEach(customer => {
       const orderCount = customer.dataValues.orderCount || 0;
       if (orderCount > 0) {
@@ -844,52 +935,52 @@ export const getCustomerAnalytics = async (req, res) => {
         signupOnlyCustomers++;
       }
     });
-    
+
     // Format customer data for frontend
     const formattedCustomers = customers.map(customer => {
       // Access the correct field names based on your model
       const userData = customer.get({ plain: true });
-      
+
       return {
         id: userData.id?.toString() || '',
         customerCode: userData.customerCode || `CUST-${userData.id}`,
         name: userData.name || 'Unknown',
         email: userData.email || 'No email',
         phone: userData.phone || 'No phone',
-        dateOfBirth: userData.dateOfBirth 
+        dateOfBirth: userData.dateOfBirth
           ? new Date(userData.dateOfBirth).toISOString().split('T')[0]
           : 'Not set',
         orders: userData.orderCount || 0,
         totalSpent: parseFloat(userData.totalSpent || 0).toFixed(2),
         status: (userData.orderCount || 0) > 0 ? 'ordered' : 'signup-only',
-        joinDate: userData.createdAt 
+        joinDate: userData.createdAt
           ? new Date(userData.createdAt).toISOString().split('T')[0]
           : new Date().toISOString().split('T')[0],
         isVerified: userData.isVerified || false,
         isActive: userData.isActive || true
       };
     });
-    
+
     const responseData = {
       totalCustomers,
       orderedCustomers,
       signupOnlyCustomers,
       customers: formattedCustomers
     };
-    
+
     console.log('Customer analytics data:', {
       totalCustomers,
       orderedCustomers,
       signupOnlyCustomers,
       customerCount: formattedCustomers.length
     });
-    
+
     res.status(200).json({
       success: true,
       message: 'Customer analytics fetched successfully',
       data: responseData
     });
-    
+
   } catch (error) {
     console.error('Get customer analytics error:', error);
     console.error('Error details:', {
@@ -898,7 +989,7 @@ export const getCustomerAnalytics = async (req, res) => {
       sql: error.sql,
       parameters: error.parameters
     });
-    
+
     res.status(500).json({
       success: false,
       message: 'Server error while fetching customer analytics',
@@ -913,7 +1004,7 @@ export const getUserAnalytics = async (req, res) => {
     // You can keep your existing analytics or redirect to the new function
     const today = new Date();
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    
+
     // Get user growth data
     const months = [];
     for (let i = 11; i >= 0; i--) {
@@ -924,12 +1015,12 @@ export const getUserAnalytics = async (req, res) => {
         year: date.getFullYear()
       });
     }
-    
+
     const userGrowth = await Promise.all(
       months.map(async ({ month, year }) => {
         const startDate = new Date(year, new Date(`${month} 1, ${year}`).getMonth(), 1);
         const endDate = new Date(year, startDate.getMonth() + 1, 0);
-        
+
         const count = await User.count({
           where: {
             createdAt: {
@@ -938,16 +1029,16 @@ export const getUserAnalytics = async (req, res) => {
             role: 'customer'
           }
         }).catch(() => 0);
-        
+
         return { month: `${month} ${year}`, count };
       })
     );
-    
+
     // Get basic stats
-    const totalCustomers = await User.count({ 
-      where: { role: 'customer', isActive: true } 
+    const totalCustomers = await User.count({
+      where: { role: 'customer', isActive: true }
     }).catch(() => 0);
-    
+
     const newCustomersThisMonth = await User.count({
       where: {
         createdAt: { [Op.gte]: startOfMonth },
@@ -955,7 +1046,7 @@ export const getUserAnalytics = async (req, res) => {
         isActive: true
       }
     }).catch(() => 0);
-    
+
     // Get customers with orders
     const customersWithOrders = await User.count({
       where: {
@@ -971,7 +1062,7 @@ export const getUserAnalytics = async (req, res) => {
         }
       }]
     }).catch(() => 0);
-    
+
     res.status(200).json({
       success: true,
       data: {

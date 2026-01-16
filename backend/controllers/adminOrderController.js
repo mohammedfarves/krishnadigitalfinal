@@ -115,8 +115,9 @@ export const getAllOrders = async (req, res) => {
             taxAmount: order.taxAmount,
             isCancelled: order.orderStatus === 'cancelled',
             isShipped: order.orderStatus === 'shipped' || order.orderStatus === 'delivered',
-            createdAt: order.createdAt,
-            updatedAt: order.updatedAt
+            isShipped: order.orderStatus === 'shipped' || order.orderStatus === 'delivered',
+            createdAt: order.createdAt || order.dataValues?.created_at || order.created_at,
+            updatedAt: order.updatedAt || order.dataValues?.updated_at || order.updatedAt
           };
         }),
         pagination: {

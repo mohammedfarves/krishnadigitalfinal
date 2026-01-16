@@ -15,7 +15,8 @@ export const createOrder = async (req, res) => {
       billingAddress,
       paymentMethod,
       notes,
-      couponCode
+      couponCode,
+      deliveryType // new field
     } = req.body;
 
     // Validate shipping address
@@ -44,8 +45,11 @@ export const createOrder = async (req, res) => {
     // Verify all items are available and prepare order items
     const orderItems = [];
     let totalPrice = 0;
-    let shippingCost = 0;
-    let taxAmount = 0;
+
+    // Calculate shipping cost based on delivery type
+    let shippingCost = deliveryType === 'express' ? 99.00 : 0.00;
+
+    let taxAmount = 0; // NO TAX
 
     // Parse cart items if necessary
     let parsedItems = [];
@@ -140,7 +144,7 @@ export const createOrder = async (req, res) => {
       });
 
       totalPrice += itemTotal;
-      taxAmount += itemTotal * (product.tax || 0) / 100;
+      // taxAmount += itemTotal * (product.tax || 0) / 100; // REMOVED TAX
     }
 
     // Apply coupon if provided
@@ -226,7 +230,8 @@ export const createOrder = async (req, res) => {
     }
 
     // Calculate final amount
-    const finalAmount = totalPrice + shippingCost + taxAmount - discountAmount;
+    // Ensure accurate float math
+    const finalAmount = Math.max(0, totalPrice + shippingCost + taxAmount - discountAmount);
 
     // Generate order number
     const orderNumber = generateOrderNumber();
