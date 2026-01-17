@@ -30,6 +30,10 @@ export const CustomerDetails = () => {
       if (response.data.success && response.data.data) {
         const customerData = response.data.data;
         console.log("Customer details:", customerData);
+        if (customerData.orders?.length > 0) {
+          console.log("First Order Data:", customerData.orders[0]);
+          console.log("First Order Items:", customerData.orders[0].products);
+        }
         // Map API response to our Customer interface
         setCustomer({
           id: customerData.id?.toString() || customerId,
@@ -413,7 +417,10 @@ export const CustomerDetails = () => {
                       {getOrderStatusBadge(order.orderStatus || "pending")}
                     </TableCell>
                     <TableCell>
-                      <Button variant="ghost" size="sm" onClick={() => navigate(`/admin/orders/${order.id}`)}>
+                      <Button variant="ghost" size="sm" onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/admin/orders/${order.id}`);
+                      }}>
                         <Eye className="h-4 w-4" />
                       </Button>
                     </TableCell>
@@ -465,7 +472,7 @@ export const CustomerDetails = () => {
                     <TableCell className="max-w-xs">
                       <div className="truncate">
                         {order.products
-                          ?.map((p) => p.productName)
+                          ?.map((p) => p.productName || p.name)
                           .join(", ")}
                       </div>
                     </TableCell>
@@ -485,7 +492,10 @@ export const CustomerDetails = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => navigate(`/admin/orders/${order.id}`)}>
+                        <Button variant="ghost" size="sm" onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/admin/orders/${order.id}`);
+                        }}>
                           <Eye className="h-4 w-4" />
                         </Button>
                         <Button variant="ghost" size="sm" onClick={() => window.open(`/track/${order.trackingId}`, "_blank")} disabled={!order.trackingId}>

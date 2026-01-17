@@ -552,13 +552,22 @@ export const getUserDetails = async (req, res) => {
     }) || 0;
 
     const userData = user.toJSON();
-    userData.orders = orders.map(order => ({
-      id: order.id,
-      orderNumber: order.order_number,
-      totalPrice: order.total_price,
-      orderStatus: order.order_status,
-      createdAt: order.created_at
-    }));
+    userData.orders = orders.map(order => {
+      const orderData = order.toJSON ? order.toJSON() : order;
+      let items = orderData.orderItems;
+      try {
+        if (typeof items === 'string') items = JSON.parse(items);
+      } catch (e) { items = []; }
+
+      return {
+        id: orderData.id,
+        orderNumber: orderData.orderNumber || orderData.order_number,
+        totalPrice: parseFloat(orderData.finalAmount || orderData.totalPrice || orderData.total_price || 0),
+        orderStatus: orderData.orderStatus || orderData.order_status,
+        createdAt: orderData.createdAt || orderData.created_at,
+        products: Array.isArray(items) ? items : []
+      };
+    });
 
     userData.reviews = reviews.map(review => ({
       id: review.id,

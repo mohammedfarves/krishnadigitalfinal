@@ -108,7 +108,10 @@ export const AdminOverview = () => {
     }).format(amount);
   };
   const formatDate = (dateString) => {
+    if (!dateString) return "N/A";
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "Invalid Date";
+
     return new Intl.DateTimeFormat("en-IN", {
       dateStyle: "medium",
       timeStyle: "short",
@@ -260,7 +263,7 @@ export const AdminOverview = () => {
                             <span className="text-xs text-muted-foreground hidden sm:inline-block">{order.user?.email}</span>
                           </div>
                         </td>
-                        <td className="p-3 text-muted-foreground hidden sm:table-cell">{formatDate(order.createdAt)}</td>
+                        <td className="p-3 text-muted-foreground hidden sm:table-cell">{formatDate(order.createdAt || order.date || order.created_at)}</td>
                         <td className="p-3 font-semibold">{formatCurrency(order.totalPrice)}</td>
                         <td className="p-3 text-right">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize
@@ -377,14 +380,45 @@ export const AdminOverview = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
               {stats.popularProducts.slice(0, 5).map((product) => (
                 <div key={product.id} className="group relative border rounded-xl overflow-hidden hover:shadow-lg transition-all duration-300 bg-card">
+                  {/* Robust Image Handling */}
                   <div className="aspect-video w-full bg-muted overflow-hidden relative">
-                    {product.images ? (
-                      <img src={Array.isArray(product.images) ? product.images[0] : product.images} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-muted-foreground bg-muted/50">
-                        <Package className="h-8 w-8 opacity-50" />
-                      </div>
-                    )}
+                    {(() => {
+                      const getImage = (p) => {
+                        if (p.images) {
+                          if (Array.isArray(p.images)) {
+                            return typeof p.images[0] === 'string' ? p.images[0] : p.images[0]?.url;
+                          }
+                          return typeof p.images === 'string' ? p.images : p.images?.url;
+                        }
+                        if (p.colorsAndImages) {
+                          // Fallback for complex structure
+                          try {
+                            const cni = typeof p.colorsAndImages === 'string'
+                              ? JSON.parse(p.colorsAndImages)
+                              : p.colorsAndImages;
+                            return Object.values(cni)[0]?.[0]?.url;
+                          } catch (e) { return null; }
+                        }
+                        return null;
+                      };
+                      const imgUrl = getImage(product);
+
+                      return imgUrl ? (
+                        <img
+                          src={imgUrl}
+                          alt={product.name}
+                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.src = "https://placehold.co/600x400?text=No+Image";
+                          }}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-muted-foreground bg-muted/50">
+                          <Package className="h-8 w-8 opacity-50" />
+                        </div>
+                      );
+                    })()}
                     <div className="absolute top-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-full backdrop-blur-sm">
                       {product.totalReviews || 0} Reviews
                     </div>
@@ -394,7 +428,7 @@ export const AdminOverview = () => {
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-lg">{formatCurrency(product.price)}</span>
                       <div className="flex items-center text-xs text-amber-500 font-medium">
-                        <span className="mr-1">★</span> {product.rating?.toFixed(1) || "0.0"}
+                        <span className="mr-1">★</span> {(Number(product.rating) || 0).toFixed(1)}
                       </div>
                     </div>
                   </div>

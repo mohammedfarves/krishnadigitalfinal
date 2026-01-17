@@ -17,7 +17,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import api from "@/lib/api";
 
@@ -388,13 +387,15 @@ export const ProductManagement = () => {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
+          {/* Added max-height and overflow-auto for vertical scrolling */}
+          <div className="rounded-md border max-h-[calc(100vh-300px)] overflow-auto">
             <Table>
-              <TableHeader className="bg-muted/50">
+              <TableHeader className="bg-muted/50 sticky top-0 z-10"> {/* Sticky header */}
                 <TableRow>
                   <TableHead className="w-[80px]">Image</TableHead>
                   <TableHead>Product Info</TableHead>
                   <TableHead>Category</TableHead>
+                  <TableHead>Colors</TableHead> {/* Added Colors Column Header */}
                   <TableHead>Price</TableHead>
                   <TableHead>Stock</TableHead>
                   <TableHead>Status</TableHead>
@@ -404,7 +405,7 @@ export const ProductManagement = () => {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center">
+                    <TableCell colSpan={8} className="h-24 text-center"> {/* Updated colSpan */}
                       <div className="flex justify-center items-center gap-2">
                         <Loader2 className="h-5 w-5 animate-spin text-primary" /> Loading products...
                       </div>
@@ -412,7 +413,7 @@ export const ProductManagement = () => {
                   </TableRow>
                 ) : filteredProducts.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="h-24 text-center text-muted-foreground"> {/* Updated colSpan */}
                       No products found matching your criteria.
                     </TableCell>
                   </TableRow>
@@ -422,6 +423,9 @@ export const ProductManagement = () => {
                     const stock = typeof product.stock === 'object'
                       ? Object.values(product.stock || {}).reduce((a, b) => a + Number(b), 0)
                       : Number(product.stock);
+
+                    // Extract colors
+                    const availableColors = Object.keys(product.colorsAndImages || {});
 
                     return (
                       <TableRow key={product.id} className="hover:bg-muted/50">
@@ -442,6 +446,20 @@ export const ProductManagement = () => {
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="font-normal">{product.category?.name || "Uncategorized"}</Badge>
+                        </TableCell>
+                        {/* Added Colors Column Cell */}
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {availableColors.length > 0 ? (
+                              availableColors.map((color, idx) => (
+                                <Badge key={idx} variant="secondary" className="text-[10px] px-1 py-0 h-5">
+                                  {color}
+                                </Badge>
+                              ))
+                            ) : (
+                              <span className="text-xs text-muted-foreground">-</span>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-col">
@@ -513,7 +531,7 @@ export const ProductManagement = () => {
             <DialogDescription>Fill in the details below to {isEditing ? "update" : "create"} a product.</DialogDescription>
           </DialogHeader>
 
-          <ScrollArea className="flex-1 max-h-[calc(90vh-140px)]">
+          <div className="flex-1 overflow-y-auto">
             <div className="p-6">
               <Tabs defaultValue="basic" className="w-full">
                 <TabsList className="grid w-full grid-cols-4 mb-6">
@@ -708,7 +726,7 @@ export const ProductManagement = () => {
                 </TabsContent>
               </Tabs>
             </div>
-          </ScrollArea>
+          </div>
 
           <DialogFooter className="border-t p-4">
             <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isSubmitting}>Cancel</Button>

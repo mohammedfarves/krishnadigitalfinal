@@ -34,6 +34,7 @@ import { CustomerAnalytics } from "@/components/admin/CustomerAnalytics";
 import { CustomerDetails } from "@/components/admin/CustomerDetails";
 import { ProductManagement } from "@/components/admin/ProductManagement";
 import { OrderManagement } from "@/components/admin/OrderManagement";
+import { OrderDetails } from "@/components/admin/OrderDetails";
 import { BirthdayManagement } from "@/components/admin/BirthdayManagement";
 import { AdminSettings } from "@/components/admin/AdminSettings";
 import AddBrand from "@/components/admin/AddBrand";
@@ -120,6 +121,7 @@ const App = () => {
                       <Route path="analytics/customers/:id" element={<CustomerDetails />} />
                       <Route path="products" element={<ProductManagement />} />
                       <Route path="orders" element={<OrderManagement />} />
+                      <Route path="orders/:id" element={<OrderDetails />} />
                       <Route path="birthdays" element={<BirthdayManagement />} />
                       <Route path="settings" element={<AdminSettings />} />
                       <Route path="brands" element={<AddBrand />} />
